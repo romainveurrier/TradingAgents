@@ -258,10 +258,26 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional recommended holding period, e.g. '3-6 months'.",
     )
+    leverage: float | None = Field(
+        default=None,
+        description=(
+            "Only when the instrument context offers leverage: the multiple of the "
+            "rating's exposure to hold, from 1 up to the stated maximum. Above 1 "
+            "only when the evidence is decisive. Omit it otherwise."
+        ),
+    )
 
     @field_validator("price_target", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
+    @field_validator("leverage", mode="before")
+    @classmethod
+    def _leverage_multiple(cls, v):
+        # "3x" and "3.5X" are how a model writes a multiple.
+        if isinstance(v, str):
+            v = v.strip().rstrip("xX").strip()
         return _coerce_optional_float(v)
 
 
@@ -285,6 +301,9 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
     target = decision.price_target if decision.price_target is not None else "not provided"
     parts.extend(["", f"**Price Target**: {target}"])
     parts.extend(["", f"**Time Horizon**: {decision.time_horizon or 'not provided'}"])
+    # Only venues that offer leverage ask for it, so an absent value adds no line.
+    if decision.leverage is not None:
+        parts.extend(["", f"**Leverage**: {decision.leverage:g}x"])
     return "\n".join(parts)
 
 

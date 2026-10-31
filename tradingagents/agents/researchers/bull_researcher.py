@@ -1,4 +1,5 @@
 from tradingagents.agents.context import (
+    fundamentals_label as _fundamentals_label,
     get_instrument_context_from_state,
     get_language_instruction,
     opponent_argument_or_opening,
@@ -22,10 +23,8 @@ def create_bull_researcher(llm):
         instrument_context = get_instrument_context_from_state(state)
         asset_type = state.get("asset_type", "stock")
         target_label = "stock" if asset_type == "stock" else "asset"
-        fundamentals_label = (
-            "Company fundamentals report"
-            if asset_type == "stock"
-            else "Asset fundamentals report (may be unavailable for crypto)"
+        fundamentals_label = _fundamentals_label(
+            state, "Company fundamentals report", "Asset fundamentals report (may be unavailable for crypto)"
         )
 
         prompt = f"""You are a Bull Analyst advocating for investing in the {target_label}. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively.

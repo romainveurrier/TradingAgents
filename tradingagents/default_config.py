@@ -150,6 +150,27 @@ def build_default_config() -> dict:
             "ECB Bank of England BOJ central bank policy",
             "oil commodities supply chain energy",
         ],
+        # Crypto venue. None keeps the generic crypto pipeline (Yahoo prices).
+        # "hyperliquid" trades the coin's perpetual on Hyperliquid: prices and
+        # funding come from the venue, the instrument context carries the venue
+        # contract (what a rating does, the costs), and a derivatives analyst
+        # takes the fundamentals slot. See tradingagents/hyperliquid.
+        "crypto_venue": None,
+        # Serve stored Hyperliquid / point-in-time news history only, never the
+        # network: a frozen replay of a backtest.
+        "hyperliquid_offline": False,
+        # How past decisions are scored for the memory log. "auto" settles them
+        # from Yahoo closes against the benchmark; "external" leaves it to the
+        # caller (the Hyperliquid simulator settles from its own net P&L).
+        "settlement_mode": "auto",
+        # The venue contract the agents are told about (Hyperliquid only).
+        "hyperliquid": {
+            "fee_tier": 0,
+            "staking": "none",
+            "slippage_bps": 1.0,
+            "latency_minutes": 15,
+            "max_gross_leverage": 1.0,
+        },
         # Data vendor configuration
         # Category-level configuration (default for all tools in category).
         # The configured value is the exact vendor chain — requests are NOT silently
@@ -164,6 +185,7 @@ def build_default_config() -> dict:
             "news_data": "yfinance",             # Options: alpha_vantage, yfinance
             "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
             "prediction_markets": "polymarket",  # Options: polymarket (keyless)
+            "crypto_derivatives": "hyperliquid", # Options: hyperliquid (keyless)
         },
         # Tool-level configuration (takes precedence over category-level)
         "tool_vendors": {

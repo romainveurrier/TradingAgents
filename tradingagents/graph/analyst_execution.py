@@ -1,7 +1,12 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from tradingagents.agents.analysts import fundamentals_analyst, market_analyst, news_analyst
+from tradingagents.agents.analysts import (
+    derivatives_analyst,
+    fundamentals_analyst,
+    market_analyst,
+    news_analyst,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,14 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
         report_key="fundamentals_report",
         tools=fundamentals_analyst.TOOLS,
     ),
+    "derivatives": AnalystNodeSpec(
+        # The crypto perpetual's analogue of fundamentals: it files its report
+        # in the fundamentals slot, so it and "fundamentals" exclude each other.
+        key="derivatives",
+        agent_node="Derivatives Analyst",
+        report_key="fundamentals_report",
+        tools=derivatives_analyst.TOOLS,
+    ),
 }
 
 
@@ -58,6 +71,10 @@ def build_analyst_execution_plan(
 
     if not specs:
         raise ValueError("at least one analyst must be selected")
+
+    report_keys = [spec.report_key for spec in specs]
+    if len(set(report_keys)) != len(report_keys):
+        raise ValueError("the fundamentals and derivatives analysts file the same report; select one")
 
     return AnalystExecutionPlan(specs=specs)
 

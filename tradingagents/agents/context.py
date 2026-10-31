@@ -166,7 +166,35 @@ def build_instrument_context(
             " Treat it as a crypto asset rather than a company, and do not "
             "assume company fundamentals are available."
         )
+        if on_hyperliquid():
+            context += " " + hyperliquid_contract()
     return context
+
+
+def on_hyperliquid() -> bool:
+    """Whether the run trades a Hyperliquid perpetual (``crypto_venue``)."""
+    from tradingagents.dataflows.config import get_config
+    return (get_config().get("crypto_venue") or "").lower() == "hyperliquid"
+
+
+def hyperliquid_contract() -> str:
+    """The venue contract every agent reads: what a rating does, and what it costs."""
+    from tradingagents.dataflows.config import get_config
+    from tradingagents.hyperliquid.venue import CostModel, venue_contract_text
+    hl = get_config().get("hyperliquid") or {}
+    cost = CostModel(fee_tier=int(hl.get("fee_tier", 0)), staking=hl.get("staking", "none"),
+                     slippage_bps=float(hl.get("slippage_bps", 1.0)))
+    return venue_contract_text(cost, float(hl.get("max_gross_leverage", 1.0)),
+                               int(hl.get("latency_minutes", 15)))
+
+
+def fundamentals_label(state: Mapping[str, Any], stock: str, crypto: str) -> str:
+    """The label of the fundamentals slot: the derivatives report on a Hyperliquid perpetual."""
+    if state.get("asset_type", "stock") == "stock":
+        return stock
+    if on_hyperliquid():
+        return "Derivatives report (funding, premium, volatility and positioning of the perpetual)"
+    return crypto
 
 
 def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:

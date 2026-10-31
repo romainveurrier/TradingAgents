@@ -30,7 +30,8 @@ from tradingagents.agents.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
-from tradingagents.agents.tools import get_news
+from tradingagents.agents.tools import get_news, on_hyperliquid
+from tradingagents.dataflows.router import route_to_vendor
 from tradingagents.dataflows.vendors.reddit import (
     CRYPTO_SUBREDDITS,
     DEFAULT_SUBREDDITS,
@@ -64,26 +65,40 @@ def create_sentiment_analyst(llm):
         # returns a string (no exceptions surface from here), so the LLM
         # always sees something — either real data or a clear placeholder.
         news_block = get_news.func(ticker, start_date, end_date)
-        # Pass the analysis window so a historical run trims social posts to it
-        # instead of leaking today's chatter into a backtest (#1220).
-        screen = jev_screen(ticker)
-        stocktwits_block = fetch_stocktwits_messages(
-            ticker, limit=30, start_date=start_date, end_date=end_date, screen=screen
-        )
-        subreddits = subreddits_for(ticker)
-        reddit_block = fetch_reddit_posts(
-            ticker, subreddits, start_date=start_date, end_date=end_date, screen=screen
-        )
+        if on_hyperliquid():
+            # StockTwits and Reddit serve today's posts with today's selection:
+            # a historical run would read crowd data measured after its date.
+            # The venue's own positioning data and the archived Fear & Greed
+            # index are point-in-time, so they replace them here.
+            system_message = _build_hyperliquid_system_message(
+                ticker=ticker,
+                start_date=start_date,
+                end_date=end_date,
+                news_block=news_block,
+                fear_greed_block=route_to_vendor("get_fear_greed", end_date, 30),
+                positioning_block=route_to_vendor("get_perp_funding", ticker, end_date, 7),
+            )
+        else:
+            # Pass the analysis window so a historical run trims social posts to it
+            # instead of leaking today's chatter into a backtest (#1220).
+            screen = jev_screen(ticker)
+            stocktwits_block = fetch_stocktwits_messages(
+                ticker, limit=30, start_date=start_date, end_date=end_date, screen=screen
+            )
+            subreddits = subreddits_for(ticker)
+            reddit_block = fetch_reddit_posts(
+                ticker, subreddits, start_date=start_date, end_date=end_date, screen=screen
+            )
 
-        system_message = _build_system_message(
-            ticker=ticker,
-            start_date=start_date,
-            end_date=end_date,
-            news_block=news_block,
-            stocktwits_block=stocktwits_block,
-            reddit_block=reddit_block,
-            subreddits=subreddits,
-        )
+            system_message = _build_system_message(
+                ticker=ticker,
+                start_date=start_date,
+                end_date=end_date,
+                news_block=news_block,
+                stocktwits_block=stocktwits_block,
+                reddit_block=reddit_block,
+                subreddits=subreddits,
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -195,5 +210,59 @@ Fill the following fields:
 - **overall_score**: A number from 0 (maximally bearish) to 10 (maximally bullish); 5 is neutral. Keep it consistent with overall_band.
 - **confidence**: low / medium / high, based on data quality and sample size.
 - **narrative**: Full source-by-source breakdown, divergences, dominant narrative themes, catalysts and risks, and a markdown summary table of key sentiment signals (direction, source, supporting evidence).
+
+{get_language_instruction()}"""
+
+
+def _build_hyperliquid_system_message(
+    *,
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    news_block: str,
+    fear_greed_block: str,
+    positioning_block: str,
+) -> str:
+    """The sentiment brief for a Hyperliquid perpetual, from point-in-time sources only."""
+    return f"""You are a crypto market sentiment analyst. Produce a sentiment report for {ticker} covering {start_date} to {end_date}, from three point-in-time sources already collected for you. Every item below was public before the end of {end_date}.
+
+## Data sources (pre-fetched, in this prompt)
+
+### News headlines (past 7 days)
+Institutional and crypto-media framing. Event-driven; the newest headlines may lag by up to a day and a half.
+
+<start_of_news>
+{news_block}
+<end_of_news>
+
+### Crypto Fear & Greed index (one value per day)
+A composite of volatility, momentum, social and search activity. Extremes are contrarian; the middle confirms trends.
+
+<start_of_fear_greed>
+{fear_greed_block}
+<end_of_fear_greed>
+
+### Positioning on the venue: perpetual funding and premium (past 7 days)
+What traders pay to hold their side. Funding above the venue's baseline means longs pay up to stay long (crowded longs); below the baseline or negative means shorts are crowded. A negative premium means the perp trades below the oracle.
+
+<start_of_positioning>
+{positioning_block}
+<end_of_positioning>
+
+## How to analyze this data
+
+1. **Separate events from opinion.** A headline about an ETF flow, a hack or a rate decision is an event; a price-prediction headline is opinion. Weight them differently.
+2. **Read the crowd through money, not words.** Funding and premium show what traders actually pay to hold a side; the Fear & Greed index is a summary of mood. Divergence between headlines and positioning is itself a signal.
+3. **Respect extremes.** Fear & Greed below 25 or above 75, or funding far from the baseline, marks one-sided positioning that is prone to squeezes.
+4. **Name the dominant narrative** that recurs across headlines, and the catalysts and risks it implies.
+5. **Be honest about data limits.** If a source is unavailable or thin, lower the confidence and say so.
+6. **Past sentiment is not predictive.** Frame conclusions as one input for the trader.
+
+## Output fields
+
+- **overall_band**: Exactly one of Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish.
+- **overall_score**: 0 (maximally bearish) to 10 (maximally bullish); 5 is neutral. Keep it consistent with overall_band.
+- **confidence**: low / medium / high, based on data quality and sample size.
+- **narrative**: Source-by-source breakdown, divergences, dominant narrative, catalysts and risks, and a markdown summary table of the key sentiment signals.
 
 {get_language_instruction()}"""

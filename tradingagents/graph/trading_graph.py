@@ -317,15 +317,18 @@ class TradingAgentsGraph:
         the log are used, and the report says what could not be settled.
         """
         note = ""
-        try:
-            # Another run settling the same log does the work; this one goes on.
-            done = self.settle_all_pending(wait=False)
-            if done.failed:
-                note = (f"{len(done.failed)} past decision(s) could not be settled this run "
-                        "and stay pending.")
-        except Exception as exc:
-            logger.warning("Settling past decisions failed: %s", exc)
-            note = f"Past decisions could not be settled this run ({type(exc).__name__}); they stay pending."
+        # A caller that settles decisions itself (the Hyperliquid simulator, from
+        # its own net P&L) must not be pre-empted by price-based settling.
+        if self.config.get("settlement_mode", "auto") != "external":
+            try:
+                # Another run settling the same log does the work; this one goes on.
+                done = self.settle_all_pending(wait=False)
+                if done.failed:
+                    note = (f"{len(done.failed)} past decision(s) could not be settled this run "
+                            "and stay pending.")
+            except Exception as exc:
+                logger.warning("Settling past decisions failed: %s", exc)
+                note = f"Past decisions could not be settled this run ({type(exc).__name__}); they stay pending."
         try:
             past_context = self.memory_log.get_past_context(
                 state["company_of_interest"], as_of=self._memory_as_of(state["trade_date"]))

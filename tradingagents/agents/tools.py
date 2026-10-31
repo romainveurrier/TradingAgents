@@ -9,10 +9,17 @@ from typing import Annotated, Literal
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
+from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.date_window import as_of, as_of_window
 from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.router import no_data_available, route_to_vendor, vendor_unavailable
+from tradingagents.dataflows.vendors.hyperliquid import build_hl_snapshot
 from tradingagents.dataflows.vendors.yahoo.snapshot import build_verified_market_snapshot
+
+
+def on_hyperliquid() -> bool:
+    """Whether the run trades a Hyperliquid perpetual (``crypto_venue``)."""
+    return (get_config().get("crypto_venue") or "").lower() == "hyperliquid"
 
 
 @tool
@@ -87,7 +94,8 @@ def get_verified_market_snapshot(
     """
     # An exception out of a tool would end the run.
     try:
-        return build_verified_market_snapshot(symbol, as_of(curr_date, trade_date), look_back_days)
+        build = build_hl_snapshot if on_hyperliquid() else build_verified_market_snapshot
+        return build(symbol, as_of(curr_date, trade_date), look_back_days)
     except VendorUnavailableError as exc:
         return vendor_unavailable("get_verified_market_snapshot", exc)
     except NoMarketDataError as exc:
@@ -289,3 +297,63 @@ def get_prediction_markets(
         str: A formatted markdown report of matching prediction markets
     """
     return route_to_vendor("get_prediction_markets", topic, limit, trade_date or None)
+
+
+@tool
+def get_perp_funding(
+    symbol: Annotated[str, InjectedState("company_of_interest")],
+    curr_date: Annotated[str, "The current trading date, YYYY-mm-dd"],
+    look_back_days: Annotated[int, "Days of funding history to tabulate (2-60)"] = 14,
+    trade_date: Annotated[str, InjectedState("trade_date")] = "",
+) -> str:
+    """
+    Retrieve the perpetual's hourly funding-rate and premium history on the venue:
+    the latest print, means over 24 hours / the window / 30 days, the share of
+    prints at the venue's baseline rate, and a daily table. A positive rate means
+    longs pay shorts; the table shows what holding a long or a short costs.
+    Args:
+        curr_date (str): The current trading date, YYYY-mm-dd
+        look_back_days (int): Days of history to tabulate, default 14
+    Returns:
+        str: A markdown report of funding and premium.
+    """
+    return route_to_vendor("get_perp_funding", symbol, as_of(curr_date, trade_date), look_back_days)
+
+
+@tool
+def get_perp_market_structure(
+    symbol: Annotated[str, InjectedState("company_of_interest")],
+    curr_date: Annotated[str, "The current trading date, YYYY-mm-dd"],
+    look_back_days: Annotated[int, "Window for volatility and range statistics, in days (7-90)"] = 30,
+    trade_date: Annotated[str, InjectedState("trade_date")] = "",
+) -> str:
+    """
+    Retrieve the perpetual's market structure from closed hourly and daily candles:
+    realized volatility over 24 hours / 7 days / the window, returns over 1/3/7/30
+    days, the 30-day range and distance from it, volume relative to its 30-day
+    mean, and a day-by-day table of the last week.
+    Args:
+        curr_date (str): The current trading date, YYYY-mm-dd
+        look_back_days (int): Window for the statistics, default 30
+    Returns:
+        str: A markdown report of volatility, returns, ranges and activity.
+    """
+    return route_to_vendor("get_perp_market_structure", symbol, as_of(curr_date, trade_date), look_back_days)
+
+
+@tool
+def get_fear_greed(
+    curr_date: Annotated[str, "The current trading date, YYYY-mm-dd"],
+    look_back_days: Annotated[int, "Days of index history"] = 30,
+    trade_date: Annotated[str, InjectedState("trade_date")] = "",
+) -> str:
+    """
+    Retrieve the Crypto Fear & Greed index (0 = extreme fear, 100 = extreme greed),
+    one value per day, with only values already published by the end of curr_date.
+    Args:
+        curr_date (str): The current trading date, YYYY-mm-dd
+        look_back_days (int): Days of history, default 30
+    Returns:
+        str: A markdown report of the index and its recent path.
+    """
+    return route_to_vendor("get_fear_greed", as_of(curr_date, trade_date), look_back_days)

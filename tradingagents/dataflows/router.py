@@ -17,7 +17,18 @@ from tradingagents.dataflows.vendors.alpha_vantage import (
     get_news as get_alpha_vantage_news,
     get_stock as get_alpha_vantage_stock,
 )
+from tradingagents.dataflows.vendors.crypto_pit import (
+    get_crypto_news_pit,
+    get_fear_greed_report,
+    get_global_news_pit,
+)
 from tradingagents.dataflows.vendors.fred import get_macro_data as get_fred_macro_data
+from tradingagents.dataflows.vendors.hyperliquid import (
+    get_hl_funding_report,
+    get_hl_indicator,
+    get_hl_market_structure,
+    get_hl_ohlcv,
+)
 from tradingagents.dataflows.vendors.polymarket import (
     get_prediction_markets as get_polymarket_prediction_markets,
 )
@@ -83,7 +94,15 @@ TOOLS_CATEGORIES = {
         "tools": [
             "get_prediction_markets",
         ]
-    }
+    },
+    "crypto_derivatives": {
+        "description": "Perpetual-futures funding, premium, volatility and crypto sentiment index",
+        "tools": [
+            "get_perp_funding",
+            "get_perp_market_structure",
+            "get_fear_greed",
+        ]
+    },
 }
 
 # Optional enrichment categories. These add macro/event context to the news
@@ -99,11 +118,13 @@ VENDOR_METHODS = {
     "get_stock_data": {
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
+        "hyperliquid": get_hl_ohlcv,
     },
     # technical_indicators
     "get_indicators": {
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
+        "hyperliquid": get_hl_indicator,
     },
     # fundamental_data
     "get_fundamentals": {
@@ -129,10 +150,12 @@ VENDOR_METHODS = {
     "get_news": {
         "alpha_vantage": get_alpha_vantage_news,
         "yfinance": get_news_yfinance,
+        "crypto_pit": get_crypto_news_pit,
     },
     "get_global_news": {
         "yfinance": get_global_news_yfinance,
         "alpha_vantage": get_alpha_vantage_global_news,
+        "crypto_pit": get_global_news_pit,
     },
     "get_insider_transactions": {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
@@ -145,6 +168,16 @@ VENDOR_METHODS = {
     # prediction_markets
     "get_prediction_markets": {
         "polymarket": get_polymarket_prediction_markets,
+    },
+    # crypto_derivatives (Hyperliquid)
+    "get_perp_funding": {
+        "hyperliquid": get_hl_funding_report,
+    },
+    "get_perp_market_structure": {
+        "hyperliquid": get_hl_market_structure,
+    },
+    "get_fear_greed": {
+        "hyperliquid": get_fear_greed_report,
     },
 }
 
