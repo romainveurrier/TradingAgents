@@ -228,6 +228,9 @@ def test_a_date_only_news_stamp_counts_from_a_day_later():
     assert crypto_pit.news_known_at(pdt) == pdt + timedelta(days=1)
     assert crypto_pit.news_known_at(pst) == pst + timedelta(days=1)
     assert crypto_pit.news_known_at(precise) == precise
+    # Daylight saving ends on 2026-11-01: that Pacific day lasts 25 hours.
+    dst_day = datetime(2026, 11, 1, 7, 0, tzinfo=UTC)
+    assert crypto_pit.news_known_at(dst_day) == datetime(2026, 11, 2, 8, 0, tzinfo=UTC)
 
 
 def test_news_of_the_analysis_day_itself_is_withheld_unless_precisely_stamped(tmp_path, monkeypatch):

@@ -1,0 +1,46 @@
+\section{Experimental setup}\label{sec:setup}
+
+\paragraph{Pre-registration.} The protocol was written before any decision was run (\texttt{docs/hyperliquid/PLAN.md}) and amended once before the first decision. The amendment, at the user's request (``do not hesitate to use high leverage if you're sure''), lets the PM choose a leverage multiple $L\in[1,5]$. The cap comes from the Kelly and liquidation analysis of the companion paper. All counterfactuals and baselines below were specified in the plan; none was added after seeing results.
+
+\paragraph{Window.} \Decisions{} daily decisions are dated 2026-09-30 to 2026-10-29. Each decision $D$ uses information known by $(D+1)\,$00:00 UTC, executes at 00:15 UTC on the next 15-minute bar's open, and holds 24 hours. The P\&L window is therefore 2026-10-01 00:15 to 2026-10-31 00:15 UTC, all of October, with every period fully settled before this paper was written.
+
+\paragraph{Agents.} We run TradingAgents v0.7.1 with the Hyperliquid extension:
+\begin{itemize}
+\item four analysts: market, sentiment (archived sources), news (point-in-time), and derivatives;
+\item one bull--bear debate round and one risk-debate round;
+\item a cold-start memory.
+\end{itemize}
+The quick tier (analysts, researchers, trader, risk debaters, reflections) is \texttt{gpt-6-luna} and the deep tier (research manager, PM) is \texttt{gpt-6-sol}. Both are served through the user's ChatGPT plan with the provider's default sampling. Their reported training cutoffs are 18 May and 20 April 2026.
+
+\paragraph{Account and costs.} The account starts with \$100{,}000 USDC on cross margin. Trading pays the tier-0 taker fee (4.5\,bp) plus 1\,bp of slippage per side, and hourly funding as printed by the venue, charged at the bar open as the oracle proxy. Liquidation occurs at a maintenance margin of 1.25\% of notional. The rebalance band is 5\% of equity.
+
+\paragraph{Policy.} The primary policy is long/short (Buy $+L$, Overweight $+0.5L$, Hold keeps, Underweight $-0.5L$, Sell $-L$). The \emph{same decision sequence} is replayed four more ways:
+\begin{itemize}
+\item at $1\times$, ignoring the PM's multiple;
+\item long/flat at $1\times$;
+\item volatility-targeted at 40\% annualized, capped at $2\times$;
+\item honoring the trader's stop-loss.
+\end{itemize}
+These are counterfactual, because the agents saw the primary policy's book.
+
+\paragraph{Baselines.} Each baseline is decided at the same cutoffs from closed daily candles and priced by the same engine:
+\begin{itemize}
+\item buy-and-hold ($1\times$ long, never rebalanced);
+\item 30-day time-series momentum \citep{moskowitz2012time};
+\item SMA(20) trend, long/short;
+\item the sign of the MACD histogram;
+\item RSI(14) reversion (long below 35, short above 65, flat between);
+\item cash.
+\end{itemize}
+
+\paragraph{Leakage controls.} All controls of the companion paper are active:
+\begin{itemize}
+\item point-in-time slicing by bar close, verified by the canary test;
+\item the known-at rule for news;
+\item archived sentiment sources only;
+\item execution after the cutoff;
+\item memory visible two decisions later;
+\item a memorization and clock probe of both models (\S\ref{sec:leakage}).
+\end{itemize}
+
+\paragraph{Reproducibility.} Every venue response and news query is cached in the run directory. Every decision, fill, funding payment and 15-minute equity mark is in a JSONL ledger, and every agent report is saved. Replaying the ledger through the engine reproduces the recorded equity to within \ReplayDrift{} USDC. One command rebuilds every number, table and figure in this paper from the run directory, offline.

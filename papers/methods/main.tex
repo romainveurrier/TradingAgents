@@ -1,0 +1,349 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{graphicx}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\input{../generated/numbers.tex}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\clamp}{\operatorname{clamp}}
+\newcommand{\sgn}{\operatorname{sgn}}
+
+\title{\textbf{TradingAgents-HL: Adapting a Multi-Agent LLM Trading Framework to Bitcoin Perpetual Futures on Hyperliquid}\\[0.4em]
+\large Venue mechanics, an exact accounting and cost model, and a leakage-free evaluation protocol}
+\author{Romain Veurrier\thanks{Prepared with the assistance of Claude (Anthropic), which wrote the implementation and drafted this text under the author's direction. Code: branch \texttt{hyperliquid-btc} of \url{https://github.com/romainveurrier/TradingAgents}.}}
+\date{31 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+TradingAgents is a multi-agent large-language-model (LLM) framework that emulates a trading firm: analysts, a bull--bear research debate, a trader, a risk team and a portfolio manager. It was designed for equities and evaluated in backtests that do not price the instrument's financing or the agents' own access to information. We adapt it to Bitcoin perpetual futures on Hyperliquid, a fully on-chain central limit order book.
+
+The adaptation has four parts:
+\begin{enumerate}
+\item A venue data layer that serves candles and hourly funding point-in-time, by bar close.
+\item A derivatives analyst that reads funding, premium and realized volatility in place of company fundamentals.
+\item A venue contract, read by every agent, that fixes how a rating becomes a signed, optionally leveraged target exposure.
+\item An exact cross-margin accounting engine charging taker fees, slippage, hourly funding at the oracle price, and liquidation at the venue's maintenance margin.
+\end{enumerate}
+
+We derive the venue's funding regime and verify it against every October 2026 print: the documented formula reproduces \FundMatch{} of \FundPrints{} prints to $10^{-10}$, and \FundBase{} of them sit exactly at the interest-rate floor. From the accounting we obtain three results:
+\begin{itemize}
+\item A first-order decomposition of daily returns.
+\item The break-even accuracy of a daily direction forecaster (\PowBreakeven{} at the window's volatility).
+\item Exact liquidation distances, which, combined with the Kelly criterion, motivate capping agent-chosen leverage at $5\times$.
+\end{itemize}
+
+We formalize the information timing of each decision, list eight channels through which a backtest of an LLM agent can see the future, and give a control for each, including a known-at rule for news stamped only by date and a canary test that poisons all post-cutoff data. Finally we show that a one-month daily evaluation has very little power. The annualized Sharpe ratio has a standard error of about \PowSE{}, so it would have to exceed about \PowMinSR{} to be distinguishable from zero. We specify the inference that must accompany any such result. A companion paper applies the protocol to October 2026.
+\end{abstract}
+
+\section{Introduction}
+
+Multi-agent LLM systems for trading assign specialized roles to separate model instances and let them argue \citep{xiao2024tradingagents,yu2023finmem,li2024cryptotrade}. TradingAgents \citep{xiao2024tradingagents} is the most widely used open implementation. Its graph runs:
+\begin{enumerate}
+\item four analysts (market, sentiment, news, fundamentals);
+\item a bull--bear debate judged by a research manager;
+\item a trader's proposal;
+\item a three-way risk debate;
+\item a portfolio manager (PM), who issues a five-tier rating.
+\end{enumerate}
+
+Bringing such a system to a crypto perpetual future raises three problems that equity backtests rarely face.
+
+\begin{enumerate}
+\item \textbf{The instrument has a financing leg.} A perpetual future never expires. It is tied to spot by a periodic \emph{funding} payment between longs and shorts \citep{shiller1993measuring,he2022fundamentals,ackerer2024perpetual}. On Hyperliquid this payment is charged every hour and, at its floor, costs a long about 11\% a year. A buy-and-hold comparison that ignores it is wrong by that much.
+\item \textbf{Shorting and leverage are native.} A rating must therefore map to a \emph{signed} exposure. If the agents are allowed to choose leverage, the evaluation must model margin and liquidation.
+\item \textbf{The agents are LLMs.} Their inputs include free text whose publication time is often imprecise, and their pretraining may already contain the test period \citep{glasserman2023assessing,sarkar2024lookahead,lopezlira2025memorization}.
+\end{enumerate}
+
+This paper documents the adaptation and the evaluation protocol. Its contributions are:
+\begin{itemize}
+\item the venue adaptation of TradingAgents (\S\ref{sec:design});
+\item an exact accounting model with closed-form costs, carry and liquidation distances, and the funding regime verified on venue data (\S\ref{sec:model});
+\item the economics of daily trading on the venue: break-even accuracy, the carry of passive exposure, and leverage under the Kelly criterion (\S\ref{sec:econ});
+\item a timing contract and a taxonomy of look-ahead channels with a control for each (\S\ref{sec:leakage});
+\item a statistical protocol for short samples, with a power analysis (\S\ref{sec:stats}).
+\end{itemize}
+
+The implementation is open source and every number in this paper is regenerated from the run directory by one command.
+
+\section{Background}\label{sec:background}
+
+\subsection{Perpetual futures}
+A perpetual future pays the change in its own price and has no expiry. Convergence to the underlying is enforced by funding: a cash flow from longs to shorts proportional to the perp's premium over an index, plus an interest-rate term \citep{he2022fundamentals,ackerer2024perpetual}. When funding is positive, longs pay it. Funding is therefore a carry, and a crowding signal: persistent positive funding means leveraged longs are paying to stay in.
+
+\subsection{Hyperliquid}
+Hyperliquid runs a central limit order book on its own chain, with USDC collateral and cross or isolated margin \citep{hyperliquiddocs}. The facts used here, checked against the documentation and the public \texttt{/info} endpoint on 31 October 2026, are the following.
+
+\paragraph{Fees.} Fees depend on the account's 14-day weighted volume, in seven tiers. In the base tier the taker fee is 4.5\,bp and the maker fee 1.5\,bp; in the top tier they are 2.4\,bp and 0. Staking the venue's token discounts fees by 5--40\%.
+
+\paragraph{Funding.} Funding is paid \emph{hourly}, at one eighth of an 8-hour rate
+\begin{equation}\label{eq:funding}
+F_{8h} = P + \clamp\!\left(I - P,\,-c,\,c\right),\qquad I = 0.01\%,\ c = 0.05\%.
+\end{equation}
+Here $P$ is the hour's average premium index. It is sampled every 5\,s from the impact bid and ask (the average execution prices for a contract-specific notional) relative to the oracle price. The hourly rate is capped at 4\%. The payment is $\text{size}\times\text{oracle price}\times\text{rate}$; the oracle is a weighted median of centralized-exchange spot prices.
+
+\paragraph{Margin.} BTC trades at up to $40\times$ leverage ($20\times$ above \$150M notional). The maintenance margin is half the initial margin at maximum leverage, i.e.\ $m = 1.25\%$ of notional. A cross account is liquidated when its equity falls below maintenance.
+
+\paragraph{Data.} Candles are served for the most recent 5000 bars of each interval. Funding history is complete. The order book and open interest are live only.
+
+\subsection{TradingAgents}
+The upstream framework (v0.7.1) runs the analysts in parallel, each with tools that clamp requested dates to the analysis date. A memory log reflects on settled past decisions and is filtered to lessons whose outcome was known by the decision date. An existing \texttt{crypto} mode drops the fundamentals analyst and prices coins from Yahoo spot data. Its sentiment analyst reads StockTwits and Reddit, which serve only recent posts with popularity measured on the day of the fetch.
+
+\section{System design}\label{sec:design}
+
+All changes are opt-in under \texttt{crypto\_venue="hyperliquid"}. Without the flag the upstream behavior is unchanged, and its 1412 tests pass.
+
+\subsection{Point-in-time data layer}
+A Hyperliquid vendor fetches candles (1\,d, 1\,h, 15\,m) and every funding print, paginating and caching closed history. Each tool call has a \emph{cutoff} $c_D$ (\S\ref{sec:leakage}). A candle is admissible only if it has closed by $c_D$, and a funding print only if it printed before $c_D$. Slicing precedes any computation, so no indicator can reach a later bar.
+
+The tools served are:
+\begin{itemize}
+\item daily OHLCV;
+\item thirteen indicators (moving averages, MACD, RSI, Bollinger bands, ATR, VWMA, MFI);
+\item a verified snapshot;
+\item a funding report: latest print, 24-hour, window and 30-day means, the share of prints at the floor, the premium, and the cost of holding a long for 24 hours;
+\item a market-structure report: realized volatility at three horizons, returns, the 30-day range, and relative volume.
+\end{itemize}
+
+News comes from Google News search, subject to the known-at rule of \S\ref{sec:news}. The Crypto Fear \& Greed index \citep{alternativefng} is archived daily and served once known.
+
+\subsection{Agents}
+\paragraph{Derivatives analyst.} The crypto analogue of fundamentals. It calls the funding, market-structure and sentiment-index tools and reports carry, crowding and the volatility regime. It files in the fundamentals slot, so the researchers and risk debaters read it where they would read fundamentals.
+
+\paragraph{Sentiment analyst.} Its live-only social feeds are replaced by three archived sources: headlines, the Fear \& Greed index, and the venue's own positioning data (funding and premium).
+
+\paragraph{Venue contract.} Every agent reads the instrument context, so the contract lives there. It states the following.
+\begin{itemize}
+\item \emph{Timing}: execution about 15 minutes after the end of the analysis date, re-decided every 24 hours.
+\item \emph{The rating map} (Table~\ref{tab:map}).
+\item \emph{Costs}: the all-in rate per side, and the cost of a full flip.
+\item \emph{Funding}: its sign convention and its carry at the floor.
+\item \emph{Leverage}: if enabled, the leverage rules and the exact liquidation distances at $2\times$, $3\times$ and the cap.
+\end{itemize}
+The PM's structured output gains an optional \texttt{leverage} field. It is rendered only when set, so upstream output is unchanged.
+
+\begin{table}[t]\centering\small
+\caption{From the PM's rating to a target net exposure $x^\star$ (position notional over equity). $L\in[1,L_{\max}]$ is the PM's leverage multiple; Hold keeps the position. The long/flat column is a counterfactual policy.}\label{tab:map}
+\begin{tabular}{lcc}\toprule
+Rating & Long/short (primary) & Long/flat \\\midrule
+Buy & $+1\cdot L$ & $+1$\\
+Overweight & $+0.5\cdot L$ & $+0.5$\\
+Hold & keep $x$ & keep $x$\\
+Underweight & $-0.5\cdot L$ & $x/2$ if long, else 0\\
+Sell & $-1\cdot L$ & 0\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Execution policy.} The map in Table~\ref{tab:map} is deterministic and lives outside the LLMs, so the same decisions can be replayed under other policies. A rebalance band of 5\% of equity suppresses trades caused only by price drift; closing and flipping are always traded.
+
+\paragraph{Memory.} Settlement is external: the simulator writes each decision's realized net return, and its excess over a $1\times$ long, into the memory log. Each entry carries a resolution date that makes it visible only to decisions taken after the outcome is known (Proposition~\ref{prop:memory}).
+
+\section{Accounting and cost model}\label{sec:model}
+
+\subsection{State, equity and fills}
+An account holds the following state:
+\begin{itemize}
+\item collateral $C$ (deposits plus realized P\&L, less fees and funding paid);
+\item a signed size $q$ (long $>0$);
+\item an average entry price $\bar P$.
+\end{itemize}
+At mark $P$ its equity and exposure are
+\begin{equation}
+E = C + q\,(P-\bar P),\qquad x = \frac{qP}{E}.
+\end{equation}
+An order $\Delta q$ against a reference price $P^0$ fills at $P^f = P^0\,(1+\sgn(\Delta q)\,s)$, where $s$ is the per-side slippage, and pays the fee $\phi\,|\Delta q|\,P^f$. Adding to a position updates $\bar P$ to the size-weighted average. Reducing it realizes $(P^f-\bar P)$ on the closed quantity. Flipping it closes the old position and opens the remainder at $P^f$.
+
+\begin{proposition}[What a fill costs]\label{prop:fill}
+Marked at the reference price, a fill reduces equity by exactly its fee plus its slippage:
+\[
+E^{+}(P^0) = E^{-}(P^0) - \phi\,|\Delta q|\,P^f - |\Delta q|\,|P^f-P^0|.
+\]
+\end{proposition}
+\begin{proof}
+Take the case of adding to a position. The collateral changes by $-\phi|\Delta q|P^f$ only, and the new entry is $\bar P^{+} = (q\bar P + \Delta q P^f)/(q+\Delta q)$. Then
+\[
+(q+\Delta q)(P^0-\bar P^{+}) = q(P^0-\bar P) + \Delta q\,(P^0 - P^f),
+\]
+and $\Delta q\,(P^0-P^f) = -|\Delta q|\,|P^f-P^0|$ because $P^f-P^0$ has the sign of $\Delta q$.
+
+When reducing, the realized amount $\Delta q\,(\bar P - P^f)$ moves into $C$ exactly as the unrealized term leaves it, and the same residual remains. A flip composes the two cases.
+\end{proof}
+The engine asserts this identity to machine precision in its tests.
+
+\subsection{Funding}
+\begin{proposition}[Funding regime]\label{prop:funding}
+By \eqref{eq:funding}, the 8-hour rate equals the interest rate exactly whenever the premium lies in $[I-c,\,I+c] = [-4\,\text{bp},\,+6\,\text{bp}]$:
+\[
+F_{8h} = \begin{cases} I & |I-P|\le c,\\ P - c & P > I + c,\\ P + c & P < I - c.\end{cases}
+\]
+The hourly rate $F_{8h}/8$ is therefore pinned at $0.00125\%$ in normal conditions. Measured from that floor, a premium shows up in funding only beyond the band.
+\end{proposition}
+\begin{proof}
+Substitute each branch of the clamp into \eqref{eq:funding}.
+\end{proof}
+
+The proposition was checked on every BTC print of the test window. Recomputing the hourly rate from the reported premium reproduces \FundMatch{} of \FundPrints{} prints to $10^{-10}$, which also establishes that the premium field is on the 8-hour basis. \FundBase{} of prints sit exactly at the floor, and the mean annualized rate was \FundAnn{}, against a floor of $0.00125\%\times 8760 = 10.95\%$. The mean premium was \PremBp{}\,bp: the perp traded slightly below its oracle, inside the band.
+
+A position held for $h$ hours at exposure $x$ pays $x\sum_h f_h$ of equity, with the oracle proxied by the bar open, an error of order premium\,$\times f \approx 10^{-9}$. At the floor this is $3x$\,bp a day. A passive $1\times$ long therefore carries a known drag of about 11\% a year. Because the venue charges funding hourly rather than every 8 hours, this drag is accrued continuously and cannot be avoided by timing entries around funding times.
+
+\subsection{Daily return decomposition}
+Let the decision at $t$ set the post-trade exposure $x_t$ on pre-trade equity, from an inherited exposure $x_t^-$. Let $R_t$ be the perp's return to the next execution, $F_t = \sum_h f_h$ the funding over the period, and $\kappa=\phi+s$ the all-in cost per unit traded.
+\begin{proposition}[Decomposition]\label{prop:decomp}
+\[
+r_t = x_t\,(R_t - F_t) \;-\; \kappa\,|x_t - x^-_t| \;+\; O\!\left(\kappa s + |F_t R_t|\right).
+\]
+\end{proposition}
+\begin{proof}
+By Proposition~\ref{prop:fill}, the fill removes $\kappa|\Delta q|P$ up to the fee being charged on $P^f$, a term of order $\kappa s$. The price leg adds $qP_t R_t = x_t E_t R_t$. Funding removes $q\sum_h P_h f_h = x_tE_t\sum_h (P_h/P_t)f_h$, with $P_h/P_t = 1+O(R_t)$. Divide by $E_t$.
+\end{proof}
+After a Hold, the inherited exposure drifts with returns: $x^-_{t+1} = x_t(1+R_t)/(1+r_t)$.
+
+\subsection{Slippage}
+The historical book is not observable. We therefore model slippage as a constant $s$ per side, with an optional square-root impact term $Y\sigma\sqrt{Q/V}$ \citep{almgren2005direct,toth2011anomalous,almgren2001optimal}. On 31 October 2026 the BTC spread was 0.13\,bp, and millions of dollars rested near the touch. A \$100k--\$500k market order walks well under 1\,bp, so the default $s=1$\,bp is conservative. The companion paper reports results from 0 to 5\,bp, for maker fills and for fee tiers 0--6.
+
+\subsection{Margin and liquidation}
+\begin{proposition}[Liquidation distance]\label{prop:liq}
+A position opened at exposure $L$ on a cross account with maintenance rate $m$ is liquidated after an adverse move of
+\[
+d_{\text{long}}(L) = \frac{1/L - m}{1-m},\qquad d_{\text{short}}(L) = \frac{1/L - m}{1+m}.
+\]
+The liquidation price of a single position is $P_{\text{liq}} = (q\bar P - C)/\big(q\,(1 - m\,\sgn q)\big)$.
+\end{proposition}
+\begin{proof}
+At entry $E_0 = qP_0/L$. Liquidation occurs at the price where $E_0 + q(P-P_0) = m\,|q|\,P$. Solve for $P/P_0$.
+\end{proof}
+
+\section{Economics of daily trading on the venue}\label{sec:econ}
+
+\subsection{Break-even accuracy}
+Consider a forecaster that sets $x_t=\pm1$, is right with probability $p$, and whose correctness is independent of $|R_t|$. Then $\E[x_tR_t]=(2p-1)\,\E|R_t|$. If successive calls are independent, the position flips with probability $1/2$ and $\E|x_t-x_{t-1}|=1$. Ignoring funding, which is symmetric for a forecaster long and short equally often, Proposition~\ref{prop:decomp} gives the break-even accuracy
+\begin{equation}\label{eq:breakeven}
+p^\star = \frac12 + \frac{\kappa\,\E|x_t-x_{t-1}|}{2\,\E|R_t|}.
+\end{equation}
+With the window's $\E|R_t|=\BTCabs$ and $\kappa = \CostSide$\,bp, $p^\star=\PowBreakeven$. Costs are a hurdle, not a wall, at daily frequency on this venue. At hourly frequency, with $\E|R|$ roughly five times smaller per period, the same cost would require an accuracy several points higher.
+
+\subsection{Leverage and the Kelly criterion}
+For per-period mean $\mu$ and variance $\sigma^2$ per unit of exposure, the continuous-time log-growth at leverage $L$ is $g(L)=L\mu-\tfrac12L^2\sigma^2$. It is maximized at $L^\star=\mu/\sigma^2$ \citep{kelly1956new} and is negative beyond $2L^\star$.
+
+For the forecaster above, $\mu=(2p-1)\E|R|$. With the window's $\sigma=\BTCsigma$, $L^\star=\KellyFive$ at $p=0.55$ and $\KellySix$ at $p=0.60$.
+
+Proposition~\ref{prop:liq} adds a hard constraint. Under a driftless log-normal approximation, the reflection principle gives
+\[
+\Pr\big(\text{liquidated within one day}\big) \approx 2\,\Phi\!\left(\frac{\ln(1-d(L))}{\sigma}\right).
+\]
+Table~\ref{tab:lev} evaluates both. A cap of $5\times$ sits at the Kelly optimum of a 55\%-accurate forecaster, and its liquidation probability is negligible. At the venue's $40\times$, a 1.27\% move liquidates, which happens within a day more often than not. Fat tails make every entry of the table optimistic. LLM confidence is not calibrated, so we let the PM choose $L$ but cap it at $5\times$.
+
+\begin{table}[t]\centering\small
+\caption{Leverage on BTC-PERP at the window's daily volatility. Liquidation distance from Proposition~\ref{prop:liq} (long, $m=1.25\%$). Liquidation probabilities use the reflection principle on a driftless log-normal; heavier tails would raise them. Growth is the annualized log-growth $g(L)$ of a forecaster with 55\% accuracy, gross of costs.}\label{tab:lev}
+\input{../generated/table_leverage.tex}
+\end{table}
+
+\section{Information timing and look-ahead control}\label{sec:leakage}
+
+\subsection{The timing contract}
+\begin{definition}
+A decision dated $D$ has:
+\begin{itemize}
+\item a cutoff $c_D=(D+1)\,\text{T00:00Z}$;
+\item an execution time $e_D=c_D+\lambda$, with $\lambda=15$\,min of agent latency;
+\item a holding period $(e_D,e_{D+1}]$.
+\end{itemize}
+An input is admissible for $D$ if and only if its \emph{known-at} time is at most $c_D$.
+\end{definition}
+A daily candle dated $D$ closes at $c_D$ and is admissible. The funding print at $c_D$ itself, stamped a few milliseconds after the hour, is not. The fill is the open of the 15-minute bar starting at $e_D$, never the close the signal used.
+
+\begin{proposition}[No outcome reaches the next decision]\label{prop:memory}
+The outcome of decision $D$ becomes known at $e_{D+1}=c_{D+1}+\lambda$. For $0<\lambda<1$\,day it is therefore invisible to decision $D+1$ and visible to $D+2$.
+\end{proposition}
+\begin{proof}
+$e_{D+1}>c_{D+1}$, and $e_{D+1}<c_{D+1}+1\,\text{day}=c_{D+2}$.
+\end{proof}
+The runner settles decision $D-2$ before running decision $D$. Independently, the memory log only shows an entry to runs dated on or after its resolution date, $D+2$. The book shown to decision $D+1$ is a snapshot taken at $c_{D+1}$, inside the previous holding period.
+
+\subsection{A taxonomy of look-ahead channels}
+Table~\ref{tab:leaks} lists the channels and their controls.
+
+\begin{table}[t]\centering\small
+\caption{Look-ahead channels for an LLM trading agent, and the controls implemented.}\label{tab:leaks}
+\begin{tabularx}{\textwidth}{@{}lXX@{}}\toprule
+ & Channel & Control\\\midrule
+L1 & Future bars or values reach a tool, or an indicator computed on the full series & Slice by bar \emph{close} time before computing; canary test (\S\ref{sec:canary})\\
+L2 & Imprecise publication stamps (date-only news) & Known-at rule (\S\ref{sec:news})\\
+L3 & Selection or popularity measured after the date (upvotes, feeds serving today's posts) & Live-only social feeds disabled for historical runs; residual: news-search ranking\\
+L4 & Trading at the price that generated the signal & Fill at $c_D+\lambda$ on the next 15-minute bar\\
+L5 & Memory and reflections using unrealized outcomes & Proposition~\ref{prop:memory}, enforced twice\\
+L6 & The model's pretraining contains the test period & Training cutoffs predate the window \citep{gpt6cutoffs}; memorization probe\\
+L7 & The provider reveals the real date & Clock probe\\
+L8 & Researcher degrees of freedom & Pre-registered protocol; every variant reported; deflated Sharpe\\\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{The known-at rule for news}\label{sec:news}
+Google News stamps most items with a date at midnight Pacific time; in our cache \NewsDateOnly{} of \NewsItems{} items are stamped this way. An item stamped with Pacific date $X$ may have appeared at any time on that date, up to 7 hours after midnight UTC of the next day. A query for 5 October 2026 indeed returns ``Bitcoin and ethereum prices today, Tuesday, October 6''. A naive date filter would hand this to the decision taken at the end of 5 October.
+
+We therefore set the known-at time of a date-only item to the next Pacific midnight (24 hours later except across a daylight-saving change). Precisely stamped items keep their stamp. The cost is a lag. The newest headline a decision could read was a median of \NewsAgeMed{} hours old at its cutoff (maximum \NewsAgeMax{}), thanks to the precisely stamped minority. Prices and funding remain current to the cutoff. GDELT's crawler timestamps \citep{leetaru2013gdelt} would be a better point-in-time source, but its API rate-limited our requests.
+
+\subsection{The canary test}\label{sec:canary}
+For every venue tool, the test suite builds two synthetic venues. They are identical up to the cutoff; from the cutoff on, one replaces every price with \$987{,}654{,}321 (or with \$1) and every funding rate with 50\%. The test asserts that every tool output is byte-identical between the two, and that the poison value never appears. Unlike an inspection of the code, this test fails if any future path, however indirect, reaches an agent.
+
+\subsection{Pretraining leakage}
+The models used, GPT-6 Luna (quick tier) and GPT-6 Sol (deep tier), have reported training cutoffs of 18 May and 20 April 2026 \citep{gpt6cutoffs}, more than four months before the window. Following \citet{lopezlira2025memorization}, we probe for memorization directly. We ask each model for Bitcoin's close on control dates before its cutoff and on dates inside the window, and compare with the venue's closes. A clean cutoff shows recall on the controls and none in the window. We also ask each model for today's date without providing one, to detect a provider-injected clock.
+
+\section{Statistical protocol}\label{sec:stats}
+
+Let $r_1,\dots,r_T$ be the daily net returns, with sample skewness $\gamma_3$ and raw kurtosis $\gamma_4$. Daily Sharpe ratios are annualized by $\sqrt{365}$ because the market never closes.
+
+\paragraph{Sharpe inference.} Under IID returns, $\operatorname{Var}(\widehat{SR})\approx(1+\tfrac12SR^2)/T$ \citep{lo2002statistics}. Allowing non-normality, it becomes $(1-\gamma_3SR+\tfrac{\gamma_4-1}{4}SR^2)/T$ \citep{mertens2002comments}. The probabilistic Sharpe ratio is
+\[
+\mathrm{PSR}(SR^\ast)=\Phi\!\left(\frac{(\widehat{SR}-SR^\ast)\sqrt{T-1}}{\sqrt{1-\gamma_3\widehat{SR}+\frac{\gamma_4-1}{4}\widehat{SR}^2}}\right)
+\]
+\citep{bailey2012sharpe}, and the minimum track-record length is
+\[
+\mathrm{MinTRL}=1+\Big(1-\gamma_3\widehat{SR}+\tfrac{\gamma_4-1}{4}\widehat{SR}^2\Big)\Big(\frac{z_{1-\alpha}}{\widehat{SR}-SR^\ast}\Big)^2.
+\]
+Because the same decisions are replayed under several policies, we deflate \citep{bailey2014deflated,harvey2015backtesting,bailey2017pbo}. The deflated ratio is the PSR with
+\[
+SR^\ast=\sqrt{V[\widehat{SR}_n]}\left((1-\gamma)\Phi^{-1}(1-\tfrac1N)+\gamma\,\Phi^{-1}(1-\tfrac{1}{Ne})\right)
+\]
+over the $N$ variants tried, where $\gamma$ is the Euler--Mascheroni constant.
+
+\paragraph{Resampling.} Confidence intervals for the Sharpe ratio, the total return and the mean daily excess over buy-and-hold use the stationary bootstrap \citep{politis1994stationary} (mean block length 3, 10{,}000 resamples), which preserves short-range dependence.
+
+\paragraph{Direction and timing.}
+\begin{itemize}
+\item \emph{Directional accuracy}: the Pesaran--Timmermann statistic \citep{pesaran1992simple}, in the spirit of \citet{henriksson1981market}, compares the hit rate of $\sgn(x_t)$ against $\sgn(R_t)$ with the rate expected under independence. We also report an exact binomial test.
+\item \emph{Timing}: a permutation test shuffles the exposures across days, which keeps how often the agents were long, short or leveraged and destroys \emph{when}. It is reported gross and net of costs, using Proposition~\ref{prop:decomp}.
+\item \emph{Random-rating Monte Carlo}: draws each day's decision from the agents' own empirical rating--leverage distribution and replays it through the full engine.
+\item \emph{Information coefficient}: Spearman's rank correlation between the rating score and the next-period return, with a permutation $p$-value.
+\end{itemize}
+
+\paragraph{Power.} With $T$ daily observations, $\operatorname{SE}(\widehat{SR}_{\text{ann}})\approx\sqrt{365/T}$, which is \PowSE{} for $T=\PowT$. Significance at 5\% then needs $\widehat{SR}_{\text{ann}}\gtrsim\PowMinSR$. For a sign forecaster the daily Sharpe ratio is about $(2p-1)\E|R|/\sigma$, so this corresponds to an accuracy of about \PowP{}; a binomial test needs at least \PowHits{} correct calls in \PowT{}. A month of daily decisions can therefore reveal only an exceptional forecaster. It can much more easily mistake luck for skill, which is why the companion paper leads with intervals and with a random-rating benchmark.
+
+\section{Limitations}
+\begin{itemize}
+\item Slippage is modeled, not observed.
+\item Open-interest history is unavailable from the venue.
+\item The news-search ranking is computed at fetch time.
+\item Headlines may be edited after publication.
+\item Each day is one sample of a stochastic model. Running it again would give a different path, and the plan quota did not allow repeated paths.
+\item The PM's leverage is an input the evaluation must take at face value; Table~\ref{tab:lev} bounds its consequences.
+\item Counterfactual policies replay decisions that were conditioned on the primary policy's book.
+\end{itemize}
+
+\section{Conclusion}
+A perpetual future is not a stock with a different ticker. It carries an hourly financing leg, native shorting and leverage, and a liquidation boundary, and an LLM agent reads text whose timing is uncertain. We built each of these into TradingAgents: as data the agents can read, as a contract they are told, and as accounting the evaluation enforces. We also stated the protocol under which the result of such a system can be trusted, and how little a single month can establish.
+
+\bibliographystyle{plainnat}
+\bibliography{../references}
+\end{document}

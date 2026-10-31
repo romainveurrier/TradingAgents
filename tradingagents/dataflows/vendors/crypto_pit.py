@@ -33,7 +33,7 @@ import os
 import re
 import threading
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time as dt_time, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
@@ -115,9 +115,16 @@ def is_date_only_stamp(stamp: datetime) -> bool:
 
 
 def news_known_at(stamp: datetime) -> datetime:
-    """The earliest instant a news item stamped ``stamp`` is proven public."""
+    """The earliest instant a news item stamped ``stamp`` is proven public.
+
+    A date-only stamp is known from the next Pacific midnight: 24 hours later on
+    most days, 23 or 25 across a daylight-saving change.
+    """
     stamp = stamp.astimezone(UTC)
-    return stamp + timedelta(days=1) if is_date_only_stamp(stamp) else stamp
+    if not is_date_only_stamp(stamp):
+        return stamp
+    local_day = stamp.astimezone(_PACIFIC).date() + timedelta(days=1)
+    return datetime.combine(local_day, dt_time(0), tzinfo=_PACIFIC).astimezone(UTC)
 
 
 def fear_greed_known_at(stamp: datetime) -> datetime:

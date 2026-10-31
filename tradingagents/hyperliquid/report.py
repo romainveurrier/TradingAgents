@@ -224,8 +224,10 @@ def analyze(run_dir: str | Path, out_dir: str | Path, mc_draws: int = 2000, boot
     }
     news = _news_lag_stats(run_dir, dates)
 
+    pipeline = _pipeline_stats(rows)
+
     summary = {
-        "generated": datetime.now(UTC).isoformat(), "spec": s,
+        "generated": datetime.now(UTC).isoformat(), "spec": s, "pipeline": pipeline,
         "replay_max_abs_drift": drift, "stats": stats, "sensitivity": sens, "inference": inf,
         "by_rating": by_rating, "rating_counts": dict(Counter(r["rating"] for r in rows)),
         "ic": ic, "ic_p": ic_p,
@@ -244,6 +246,38 @@ def analyze(run_dir: str | Path, out_dir: str | Path, mc_draws: int = 2000, boot
     if figures:
         _figures(primary, var_res, base, rows, tape, mc_tot, summary, out_dir / "figures", equity0)
     return summary
+
+
+def _direction(label: str | None) -> int:
+    if not label:
+        return 0
+    label = label.strip().title()
+    if label in RATING_SCORE:
+        return int(np.sign(RATING_SCORE[label]))
+    return {"Buy": 1, "Sell": -1}.get(label, 0)
+
+
+def _pipeline_stats(rows) -> dict:
+    """How the desk's stages agreed: research manager -> trader -> portfolio manager."""
+    rm = [_direction(r.get("research_recommendation")) for r in rows]
+    tr = [_direction(r.get("trader_action")) for r in rows]
+    pm = [_direction(r["rating"]) for r in rows]
+    n = len(rows)
+    rm_scores = [RATING_SCORE.get((r.get("research_recommendation") or "").title()) for r in rows]
+    pm_scores = [RATING_SCORE.get(r["rating"]) for r in rows]
+    softened = sum(1 for a, b in zip(rm_scores, pm_scores, strict=True)
+                   if a is not None and b is not None and abs(b) < abs(a))
+    sharpened = sum(1 for a, b in zip(rm_scores, pm_scores, strict=True)
+                    if a is not None and b is not None and abs(b) > abs(a))
+    return {
+        "n": n,
+        "pm_eq_rm_direction": sum(a == b for a, b in zip(pm, rm, strict=True)),
+        "pm_eq_trader_direction": sum(a == b for a, b in zip(pm, tr, strict=True)),
+        "pm_softened_rm": softened, "pm_sharpened_rm": sharpened,
+        "rm_counts": dict(Counter((r.get("research_recommendation") or "n/a").title() for r in rows)),
+        "trader_counts": dict(Counter((r.get("trader_action") or "n/a").title() for r in rows)),
+        "sentiment_counts": dict(Counter(r.get("sentiment_band") or "n/a" for r in rows)),
+    }
 
 
 def _json(o):
@@ -283,6 +317,15 @@ def _news_lag_stats(run_dir: Path, dates) -> dict:
 
 def _pct(x, d=2):
     return "--" if x is None or not np.isfinite(x) else f"{x * 100:+.{d}f}\\%"
+
+
+def _sci(p: float) -> str:
+    if p < 1e-12:
+        return "$<10^{-12}$"
+    if p < 1e-3:
+        e = math.floor(math.log10(p))
+        return f"${p / 10 ** e:.1f}\\times 10^{{{e}}}$"
+    return f"{p * 100:.1f}\\%"
 
 
 def _num(x, d=2):
@@ -339,6 +382,22 @@ def _write_tables(summary, rows, primary, gen: Path):
     lines += ["\\bottomrule", "\\end{longtable}"]
     (gen / "table_ledger.tex").write_text("\n".join(lines))
 
+    pw = summary["power"]
+    m = 0.0125
+    sig, abs_r = pw["btc_sigma"], pw["btc_mean_abs"]
+    mu55 = 0.10 * abs_r
+    lines = ["\\begin{tabular}{rrrrr}", "\\toprule",
+             "$L$ & Adverse move to liquidation & $P$(liquidated within 1 day) & $P$(within 30 days) & "
+             "Growth at $p=0.55$ (ann.) \\\\", "\\midrule"]
+    for lev in (1, 2, 3, 5, 10, 20, 40):
+        d = (1 / lev - m) / (1 - m)
+        p1 = 2 * metrics.N01.cdf(math.log(1 - d) / sig) if d < 1 else 0.0
+        p30 = 1 - (1 - p1) ** 30
+        g = (lev * mu55 - 0.5 * lev ** 2 * sig ** 2) * 365
+        lines.append(f"{lev}x & {d * 100:.2f}\\% & {_sci(p1)} & {_sci(p30)} & {g * 100:+.0f}\\% \\\\")
+    lines += ["\\bottomrule", "\\end{tabular}"]
+    (gen / "table_leverage.tex").write_text("\n".join(lines))
+
     lines = ["\\begin{tabular}{lrrr}", "\\toprule", "PM rating & Days & Mean next-period BTC return & Share up \\\\",
              "\\midrule"]
     for k, v in summary["by_rating"].items():
@@ -371,7 +430,7 @@ def _write_tables(summary, rows, primary, gen: Path):
         "PermGross": _num(ip["perm"]["p_gross"], 3), "PermNet": _num(ip["perm"]["p_net"], 3),
         "UnlevPSR": _num(iu["psr0"], 3), "UnlevPermNet": _num(iu["perm"]["p_net"], 3),
         "IC": _num(summary["ic"]), "ICp": _num(summary["ic_p"], 3),
-        "MCpct": f"{mc['agent_total_pct'] * 100:.0f}", "MCq05": _pct(mc["q05"]), "MCq95": _pct(mc["q95"]),
+        "MCpct": f"{mc['agent_total_pct'] * 100:.0f}", "MCqLow": _pct(mc["q05"]), "MCqHigh": _pct(mc["q95"]),
         "MCDraws": f"{mc['draws']:,}",
         "LevDays": str(summary["leverage"]["used_days"]), "LevMean": _num(summary["leverage"]["mean_when_used"], 1),
         "LevMax": _num(summary["leverage"]["max"], 1),
@@ -393,6 +452,12 @@ def _write_tables(summary, rows, primary, gen: Path):
     }
     for rating in RATINGS:
         macros[f"N{rating}"] = str(summary["rating_counts"].get(rating, 0))
+    pl = summary["pipeline"]
+    macros.update({"PMeqRM": str(pl["pm_eq_rm_direction"]), "PMeqTrader": str(pl["pm_eq_trader_direction"]),
+                   "PMsoftened": str(pl["pm_softened_rm"]), "PMsharpened": str(pl["pm_sharpened_rm"])})
+    bad = [k for k in macros if not k.isalpha()]
+    if bad:   # a TeX control sequence is letters only: \\MCq05 would define \\MCq and print "05"
+        raise ValueError(f"macro names must be letters only: {bad}")
     text = "\n".join(f"\\newcommand{{\\{k}}}{{{v}}}" for k, v in macros.items())
     (gen / "numbers.tex").write_text(text + "\n")
 

@@ -29,6 +29,10 @@
 
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
 
+> **This fork adds Bitcoin perpetual futures on Hyperliquid.** It brings venue data served point-in-time, a
+> derivatives analyst, fees, hourly funding, margin and agent-chosen leverage, a leakage-free walk-forward
+> simulator, and two papers. See [`docs/hyperliquid/README.md`](docs/hyperliquid/README.md).
+
 ## News
 
 <!-- news:start -->
