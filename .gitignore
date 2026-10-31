@@ -231,3 +231,5 @@ papers/**/*.fdb_latexmk
 papers/**/*.bbl
 papers/**/*.blg
 papers/**/*.synctex.gz
+papers/methods/main.pdf
+papers/empirical/main.pdf

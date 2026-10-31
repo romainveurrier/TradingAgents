@@ -1,0 +1,23 @@
+\begin{abstract}
+We ran TradingAgents, a multi-agent LLM trading desk, walk-forward on the Bitcoin perpetual future on Hyperliquid for every day of October 2026. Each of its \Decisions{} daily decisions saw only information available before its cutoff. Each was executed after the cutoff and paid taker fees, slippage and hourly funding. The Portfolio Manager could choose leverage of up to $5\times$.
+
+The desk returned \AgentRet{} net while Bitcoin fell \BTCWindow{} and a buy-and-hold long returned \BHRet{}. Its maximum drawdown was \AgentMDD{} against \BHMDD{}. It never used leverage and never took a full-size position.
+
+The outperformance is not evidence of forecasting skill:
+\begin{itemize}
+\item It called the next day's direction correctly on \DirHits{} of \DirN{} days (Pesaran--Timmermann $p=\PTp$).
+\item The rank correlation between its ratings and the next day's return was \IC{}.
+\item Only \MCpct{}\% of random reorderings of its own decisions did worse than the desk.
+\end{itemize}
+An exposure-versus-timing decomposition locates the result. The desk's average net-short stance (\MeanSignedExp{}$\times$ equity) earned \AttrStatic{}, its day-to-day timing contributed \AttrActive{}, and costs \AttrCosts{}. Two simple trend rules, 30-day momentum and MACD, earned \TSMOMRet{} and \MACDRet{} in the same month.
+
+Replaying the same decisions at fixed leverage shows what the $40\times$ the venue offers would have done: the account is liquidated on 21 October. We also report:
+\begin{itemize}
+\item stationary-bootstrap intervals, which are wide (Sharpe ratio between \SharpeLo{} and \SharpeHi{});
+\item the deflated Sharpe ratio;
+\item cost and policy sensitivities;
+\item a leakage audit of the data and of the models' pretraining;
+\item a measure of how often the desk changes its mind when re-run on identical inputs.
+\end{itemize}
+One month cannot establish skill. It can show that a carefully priced, leakage-free LLM desk behaves conservatively, survives, and does not time the market.
+\end{abstract}

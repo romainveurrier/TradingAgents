@@ -1,0 +1,19 @@
+\section{Introduction}
+
+LLM trading agents are usually evaluated in backtests that are hard to trust. The data the agents read is not always point-in-time. Execution is often assumed at the price that produced the signal. Financing costs are ignored. And the models may simply remember the test period \citep{glasserman2023assessing,lopezlira2025memorization}.
+
+The companion paper adapts TradingAgents \citep{xiao2024tradingagents} to Bitcoin perpetual futures on Hyperliquid and specifies an evaluation protocol that closes these channels. This paper runs the protocol for one month, October 2026, and asks three questions:
+
+\begin{enumerate}
+\item \textbf{What does the desk do?} Its ratings, positions and use of leverage, and how its analysts, researchers, trader and portfolio manager interact.
+\item \textbf{How did it perform, net of everything a venue charges,} against buy-and-hold and simple rules?
+\item \textbf{Is there evidence of skill?} Directional accuracy, timing tests, random-decision benchmarks and intervals. We also ask how much of any result is the month rather than the agents.
+\end{enumerate}
+
+\paragraph{Findings.}
+\begin{itemize}
+\item \emph{Behavior.} The desk is cautious and consistent. It issued only half-size ratings (\NUnderweight{} Underweight, \NOverweight{} Overweight, \NHold{} Hold) and chose $1\times$ on every day, although the venue contract invited leverage under high confidence. The trader repeatedly turned half-size recommendations into full-size labels, and the portfolio manager restored the intended size every time.
+\item \emph{Performance.} The desk returned \AgentRet{} while BTC fell \BTCWindow{}: capital was preserved, with a drawdown of \AgentMDD{}. Trend rules did better.
+\item \emph{Skill.} None is detectable. Directional accuracy was \DirHits{}/\DirN{}. The result decomposes into a correct average stance (\AttrStatic{}) and losing timing (\AttrActive{}).
+\item \emph{Leakage.} The data controls hold. The models do not track October prices; the larger model recalls earlier prices almost exactly, which confirms the probe can detect memorization.
+\end{itemize}

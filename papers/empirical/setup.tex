@@ -1,6 +1,14 @@
 \section{Experimental setup}\label{sec:setup}
 
-\paragraph{Pre-registration.} The protocol was written before any decision was run (\texttt{docs/hyperliquid/PLAN.md}) and amended once before the first decision. The amendment, at the user's request (``do not hesitate to use high leverage if you're sure''), lets the PM choose a leverage multiple $L\in[1,5]$. The cap comes from the Kelly and liquidation analysis of the companion paper. All counterfactuals and baselines below were specified in the plan; none was added after seeing results.
+\paragraph{Pre-registration.} The protocol was written before any decision was run (\url{docs/hyperliquid/PLAN.md}) and amended once before the first decision. The amendment, at the user's request (``do not hesitate to use high leverage if you're sure''), lets the PM choose a leverage multiple $L\in[1,5]$. The cap comes from the Kelly and liquidation analysis of the companion paper.
+
+The policy variants, cost sensitivities and baselines were fixed before the first decision. MACD was added to the plan's baseline list at implementation time, also before any decision. Four analyses were added after results had been seen; none changes a reported performance figure:
+\begin{itemize}
+\item the fixed-leverage sensitivity (Table~\ref{tab:fixedlev}), added during the run in answer to a question about higher leverage;
+\item the exposure-versus-timing attribution;
+\item the desk-agreement statistics;
+\item the forced-estimate memorization probe, added because the first probe, which allowed the answer UNKNOWN, was uninformative.
+\end{itemize}
 
 \paragraph{Window.} \Decisions{} daily decisions are dated 2026-09-30 to 2026-10-29. Each decision $D$ uses information known by $(D+1)\,$00:00 UTC, executes at 00:15 UTC on the next 15-minute bar's open, and holds 24 hours. The P\&L window is therefore 2026-10-01 00:15 to 2026-10-31 00:15 UTC, all of October, with every period fully settled before this paper was written.
 

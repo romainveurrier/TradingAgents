@@ -1,0 +1,43 @@
+{
+  "pairs": [
+    {
+      "date": "2026-10-05",
+      "original": "Overweight",
+      "rerun": "Overweight",
+      "original_leverage": 1.0,
+      "rerun_leverage": 1.0
+    },
+    {
+      "date": "2026-10-11",
+      "original": "Underweight",
+      "rerun": "Underweight",
+      "original_leverage": 1.0,
+      "rerun_leverage": 1.0
+    },
+    {
+      "date": "2026-10-17",
+      "original": "Underweight",
+      "rerun": "Underweight",
+      "original_leverage": 1.0,
+      "rerun_leverage": 1.0
+    },
+    {
+      "date": "2026-10-23",
+      "original": "Underweight",
+      "rerun": "Underweight",
+      "original_leverage": 1.0,
+      "rerun_leverage": 1.0
+    },
+    {
+      "date": "2026-10-29",
+      "original": "Underweight",
+      "rerun": "Underweight",
+      "original_leverage": 1.0,
+      "rerun_leverage": 1.0
+    }
+  ],
+  "n": 5,
+  "same_rating": 5,
+  "same_direction": 5,
+  "mean_abs_notch_change": 0.0
+}

@@ -1,0 +1,115 @@
+{
+  "spec": {
+    "out_dir": "experiments/hl_btc_2026-10",
+    "start": "2026-09-30",
+    "end": "2026-10-29",
+    "symbol": "BTC-USD",
+    "equity0": 100000.0,
+    "analysts": [
+      "market",
+      "social",
+      "news",
+      "derivatives"
+    ],
+    "policy": {
+      "mode": "long_short",
+      "max_gross": 5.0,
+      "band": 0.05,
+      "vol_target": null,
+      "vol_cap": 2.0,
+      "use_stops": false,
+      "use_leverage": true
+    },
+    "cost": {
+      "fee_tier": 0,
+      "staking": "none",
+      "referral_discount": 0.0,
+      "maker": false,
+      "slippage_bps": 1.0,
+      "impact_coef": 0.0
+    },
+    "latency_minutes": 15,
+    "attempts": 3
+  },
+  "config": {
+    "memory_log_max_entries": null,
+    "llm_provider": "chatgpt",
+    "deep_think_llm": "gpt-6-sol",
+    "quick_think_llm": "gpt-6-luna",
+    "backend_url": null,
+    "quick_think_provider": null,
+    "deep_think_provider": null,
+    "quick_think_backend_url": null,
+    "deep_think_backend_url": null,
+    "google_thinking_level": null,
+    "openai_reasoning_effort": null,
+    "anthropic_effort": null,
+    "temperature": null,
+    "llm_max_retries": 8,
+    "max_tokens": null,
+    "checkpoint_enabled": false,
+    "output_language": "English",
+    "max_debate_rounds": 1,
+    "max_risk_discuss_rounds": 1,
+    "max_recur_limit": 100,
+    "max_tool_rounds": 20,
+    "news_article_limit": 20,
+    "global_news_article_limit": 10,
+    "global_news_lookback_days": 7,
+    "global_news_queries": [
+      "Federal Reserve interest rates inflation",
+      "S&P 500 earnings GDP economic outlook",
+      "geopolitical risk trade war sanctions",
+      "ECB Bank of England BOJ central bank policy",
+      "oil commodities supply chain energy"
+    ],
+    "crypto_venue": "hyperliquid",
+    "hyperliquid_offline": false,
+    "settlement_mode": "external",
+    "hyperliquid": {
+      "fee_tier": 0,
+      "staking": "none",
+      "slippage_bps": 1.0,
+      "latency_minutes": 15,
+      "max_gross_leverage": 5.0
+    },
+    "data_vendors": {
+      "core_stock_apis": "hyperliquid",
+      "technical_indicators": "hyperliquid",
+      "fundamental_data": "sec_edgar,yfinance",
+      "news_data": "yfinance",
+      "macro_data": "fred",
+      "prediction_markets": "polymarket",
+      "crypto_derivatives": "hyperliquid"
+    },
+    "tool_vendors": {
+      "get_news": "crypto_pit",
+      "get_global_news": "crypto_pit"
+    },
+    "holding_period_days": 1,
+    "benchmark_ticker": null,
+    "benchmark_map": {
+      ".NS": "^NSEI",
+      ".BO": "^BSESN",
+      ".T": "^N225",
+      ".TW": "^TWII",
+      ".TWO": "^TWII",
+      ".KS": "^KS11",
+      ".KQ": "^KQ11",
+      ".HK": "^HSI",
+      ".SI": "^STI",
+      ".L": "^FTSE",
+      ".DE": "^GDAXI",
+      ".PA": "^FCHI",
+      ".AS": "^AEX",
+      ".SW": "^SSMI",
+      ".MI": "FTSEMIB.MI",
+      ".TO": "^GSPTSE",
+      ".AX": "^AXJO",
+      ".SS": "000001.SS",
+      ".SZ": "399001.SZ",
+      ".SA": "^BVSP",
+      "": "SPY"
+    }
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "models": {
+    "gpt-6-luna": {
+      "clock": "2025-03-08",
+      "event": "UNKNOWN",
+      "prices": [
+        {
+          "group": "window",
+          "date": "2026-10-05",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 85738.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-12",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 81812.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-19",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 81914.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-26",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 80110.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-29",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 77947.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2025-09-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 115370.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2025-11-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 95592.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-01-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 95588.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-03-02",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 68774.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-04-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 74774.0,
+          "abs_err": null
+        }
+      ]
+    },
+    "gpt-6-sol": {
+      "clock": "UNKNOWN",
+      "event": "UNKNOWN",
+      "prices": [
+        {
+          "group": "window",
+          "date": "2026-10-05",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 85738.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-12",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 81812.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-19",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 81914.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-26",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 80110.0,
+          "abs_err": null
+        },
+        {
+          "group": "window",
+          "date": "2026-10-29",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 77947.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2025-09-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 115370.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2025-11-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 95592.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-01-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 95588.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-03-02",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 68774.0,
+          "abs_err": null
+        },
+        {
+          "group": "control",
+          "date": "2026-04-15",
+          "answer": "UNKNOWN",
+          "guess": null,
+          "truth": 74774.0,
+          "abs_err": null
+        }
+      ]
+    }
+  }
+}

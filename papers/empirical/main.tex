@@ -1,0 +1,34 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{graphicx}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\input{../generated/numbers.tex}
+\IfFileExists{../generated/consistency.tex}{\input{../generated/consistency.tex}}{}
+\graphicspath{{../figures/}}
+
+\title{\textbf{Thirty Days on Hyperliquid: A Walk-Forward Evaluation of TradingAgents on the Bitcoin Perpetual, October 2026}}
+\author{Romain Veurrier\thanks{Prepared with the assistance of Claude (Anthropic), which ran the experiment and drafted this text under the author's direction. Code, data cache, ledger and agent reports: branch \texttt{hyperliquid-btc} of \url{https://github.com/romainveurrier/TradingAgents}, directory \texttt{experiments/hl\_btc\_2026-10}.}}
+\date{31 October 2026}
+
+\begin{document}
+\maketitle
+\input{abstract}
+
+\input{intro}
+\input{setup}
+\input{results}
+
+\bibliographystyle{plainnat}
+\bibliography{../references}
+
+\appendix
+\section{Daily ledger}\label{app:ledger}
+Each row is one decision: the PM's rating and leverage, the resulting target exposure, the fill price, the BTC perp's return over the holding period, the account's net return, and the fees and funding paid in USDC. Negative funding means funding received.
+{\small\input{../generated/table_ledger.tex}}
+\end{document}

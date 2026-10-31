@@ -132,6 +132,17 @@ def analyze(run_dir: str | Path, out_dir: str | Path, mc_draws: int = 2000, boot
             for k, c in cost_models.items()}
     base = run_baselines(dates, tape, cost, equity0, symbol)
 
+    # Fixed leverage multiples on the same decisions: a risk sensitivity, not a strategy
+    # (choosing the best multiple after the fact would be look-ahead by the researcher).
+    fixed_lev = {}
+    for lev in (1, 2, 5, 10, 20, 40):
+        pol = replace(policy, use_leverage=True, max_gross=float(lev))
+        dec = {d: (r, stp, float(lev)) for d, (r, stp, _) in decisions.items()}
+        res = _replay_decisions(dates, tape, cost, pol, dec, equity0, symbol)
+        st_l = _stats(res, equity0)
+        st_l["liquidated_on"] = next((p.trade_date for p in res if p.liquidated), None)
+        fixed_lev[lev] = st_l
+
     stats = {f"agent_{k}": _stats(v, equity0) for k, v in var_res.items()}
     stats.update({k: _stats(v, equity0) for k, v in base.items()})
 
@@ -177,7 +188,8 @@ def analyze(run_dir: str | Path, out_dir: str | Path, mc_draws: int = 2000, boot
     ic = metrics.spearman([a for a, _ in scored], [b for _, b in scored]) if len(scored) > 3 else float("nan")
     ic_p = metrics.spearman_perm_p([a for a, _ in scored], [b for _, b in scored]) if len(scored) > 3 else float("nan")
     lev = [r.get("leverage") for r in rows]
-    lev_used = [x for x in lev if x]
+    lev_stated = [x for x in lev if x]
+    lev_used = [x for x in lev_stated if x > 1]     # a multiple above 1 is leverage; 1x is not
 
     # random-rating Monte Carlo: the agent's own (rating, leverage) propensities, order randomized
     rng = np.random.default_rng(2026)
@@ -226,13 +238,27 @@ def analyze(run_dir: str | Path, out_dir: str | Path, mc_draws: int = 2000, boot
 
     pipeline = _pipeline_stats(rows)
 
+    # Lo (2008): gross P&L = static part (average exposure x average return x T)
+    # + active part (covariance of exposure with return): exposure vs timing.
+    xs = np.array([p.exposure_post_trade for p in primary])
+    rs = np.array([p.btc_return for p in primary])
+    attribution = {
+        "mean_signed_exposure": float(xs.mean()),
+        "static": float(len(xs) * xs.mean() * rs.mean()),
+        "active": float(((xs - xs.mean()) * (rs - rs.mean())).sum()),
+        "fees_slippage": -float(sum(p.fee + p.slippage for p in primary)) / equity0,
+        "funding": -float(sum(p.funding for p in primary)) / equity0,
+    }
+
     summary = {
         "generated": datetime.now(UTC).isoformat(), "spec": s, "pipeline": pipeline,
+        "fixed_leverage": fixed_lev, "attribution": attribution,
         "replay_max_abs_drift": drift, "stats": stats, "sensitivity": sens, "inference": inf,
         "by_rating": by_rating, "rating_counts": dict(Counter(r["rating"] for r in rows)),
         "ic": ic, "ic_p": ic_p,
-        "leverage": {"used_days": len(lev_used), "mean_when_used": float(np.mean(lev_used)) if lev_used else 1.0,
-                     "max": float(max(lev_used)) if lev_used else 1.0, "values": lev},
+        "leverage": {"used_days": len(lev_used), "stated_days": len(lev_stated),
+                     "mean_when_used": float(np.mean(lev_used)) if lev_used else 1.0,
+                     "max": float(max(lev_stated)) if lev_stated else 1.0, "values": lev},
         "mc": {"draws": mc_draws, "agent_total_pct": float((mc_tot < agent_tot).mean()),
                "mean": float(mc_tot.mean()), "q05": float(np.quantile(mc_tot, 0.05)),
                "q95": float(np.quantile(mc_tot, 0.95)),
@@ -382,6 +408,14 @@ def _write_tables(summary, rows, primary, gen: Path):
     lines += ["\\bottomrule", "\\end{longtable}"]
     (gen / "table_ledger.tex").write_text("\n".join(lines))
 
+    lines = ["\\begin{tabular}{rrrrrrl}", "\\toprule",
+             "Multiple $L$ & Max position & Return & Sharpe & Max DD & Fees & Liquidated \\\\", "\\midrule"]
+    for lev, v in summary["fixed_leverage"].items():
+        lines.append(f"{lev}x & {v['max_abs_exposure']:.1f}x & {_pct(v['total_return'])} & {_num(v['sharpe'])} & "
+                     f"{_pct(-v['mdd'])} & {v['fees']:,.0f} & {v['liquidated_on'] or 'no'} \\\\")
+    lines += ["\\bottomrule", "\\end{tabular}"]
+    (gen / "table_fixed_leverage.tex").write_text("\n".join(lines))
+
     pw = summary["power"]
     m = 0.0125
     sig, abs_r = pw["btc_sigma"], pw["btc_mean_abs"]
@@ -412,7 +446,7 @@ def _write_tables(summary, rows, primary, gen: Path):
     macros = {
         "AgentRet": _pct(a["total_return"]), "AgentSharpe": _num(a["sharpe"]), "AgentMDD": _pct(a["mdd"], 2).lstrip("+"),
         "AgentVol": _pct(a["vol_ann"], 1).lstrip("+"), "AgentFees": f"{a['fees']:,.0f}",
-        "AgentFunding": f"{a['funding']:+,.0f}", "AgentTurnover": _num(a["turnover"], 1),
+        "AgentFunding": f"{a['funding']:+,.0f}", "AgentFundingRecv": f"{-a['funding']:,.0f}", "AgentTurnover": _num(a["turnover"], 1),
         "AgentTrades": str(a["trades"]), "AgentEnd": f"{a['equity_end']:,.0f}",
         "AgentHit": f"{a['hit_rate'] * 100:.0f}\\%", "AgentMaxExp": _num(a["max_abs_exposure"], 2),
         "AgentMeanExp": _num(a["mean_abs_exposure"], 2),
@@ -431,7 +465,9 @@ def _write_tables(summary, rows, primary, gen: Path):
         "UnlevPSR": _num(iu["psr0"], 3), "UnlevPermNet": _num(iu["perm"]["p_net"], 3),
         "IC": _num(summary["ic"]), "ICp": _num(summary["ic_p"], 3),
         "MCpct": f"{mc['agent_total_pct'] * 100:.0f}", "MCqLow": _pct(mc["q05"]), "MCqHigh": _pct(mc["q95"]),
-        "MCDraws": f"{mc['draws']:,}",
+        "MCDraws": f"{mc['draws']:,}", "MCmean": _pct(mc["mean"]),
+        "SharpePct": f"{mc['agent_sharpe_pct'] * 100:.0f}",
+        "LevStated": str(summary["leverage"]["stated_days"]),
         "LevDays": str(summary["leverage"]["used_days"]), "LevMean": _num(summary["leverage"]["mean_when_used"], 1),
         "LevMax": _num(summary["leverage"]["max"], 1),
         "PowT": str(pw["T"]), "PowSE": _num(pw["se_sharpe_ann"]), "PowMinSR": _num(pw["min_sig_sharpe_ann"], 1),
@@ -452,6 +488,10 @@ def _write_tables(summary, rows, primary, gen: Path):
     }
     for rating in RATINGS:
         macros[f"N{rating}"] = str(summary["rating_counts"].get(rating, 0))
+    at = summary["attribution"]
+    macros.update({"MeanSignedExp": f"{at['mean_signed_exposure']:+.2f}", "AttrStatic": _pct(at["static"]),
+                   "AttrActive": _pct(at["active"]), "AttrCosts": _pct(at["fees_slippage"]),
+                   "AttrFunding": _pct(at["funding"])})
     pl = summary["pipeline"]
     macros.update({"PMeqRM": str(pl["pm_eq_rm_direction"]), "PMeqTrader": str(pl["pm_eq_trader_direction"]),
                    "PMsoftened": str(pl["pm_softened_rm"]), "PMsharpened": str(pl["pm_sharpened_rm"])})

@@ -203,3 +203,22 @@ exposure x = qP/E.
 - Slippage is modeled, not observed; there is no historical book.
 - Open interest history isn't available from HL.
 - News-search results are ranked today; headlines can be edited after publication.
+
+## 10. Status after the run (2026-10-31, written after results)
+
+- **Run:** all 30 decisions completed, 0 failures, about 154 s per decision. The ledger, the agent
+  reports, the memory log and the data cache are in `experiments/hl_btc_2026-10`.
+- **Result:** −0.53% net vs −8.13% for buy-and-hold; leverage was never used.
+  - No detectable timing skill: direction right 14/30, PT p = 0.73.
+  - Results and inference are in the empirical paper.
+- **Departures from this plan:**
+  - FRED macro data was off (no API key).
+  - GDELT was rate-limited, so Google News with the known-at rule was used instead.
+  - MACD was added to the baselines before the first decision.
+- **Analyses added after results had been seen.** Each is labeled as such in the paper, and none changes
+  a reported performance figure:
+  - fixed-leverage sensitivity;
+  - exposure/timing attribution (Lo 2008);
+  - desk-agreement statistics;
+  - forced and dense memorization probe;
+  - consistency re-runs on 5 dates (planned in §9, run after).

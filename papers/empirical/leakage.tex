@@ -1,0 +1,50 @@
+\section{Leakage audit}\label{sec:leakage}
+
+\paragraph{Data path.} Four checks cover the data the agents read.
+\begin{itemize}
+\item \emph{Canary test.} It feeds every venue tool two synthetic histories that are identical before the cutoff and absurd after it, and passes: no tool output changes.
+\item \emph{News lag.} The newest headline any decision could read was a median of \NewsAgeMed{} hours old at its cutoff (maximum \NewsAgeMax{}). The other items were held back by the known-at rule, which affects the \NewsDateOnly{} of headlines stamped by date only.
+\item \emph{Memory.} Every lesson in the memory log was visible only from its resolution date, two decisions after the decision it concerns. The run log records each settlement before the decision that first reads it.
+\item \emph{Replay.} Replaying the ledger reproduces the recorded equity exactly, so no input changed between the run and this analysis.
+\end{itemize}
+
+\paragraph{Clock.} Asked for today's date with no date given, \texttt{gpt-6-sol} answered UNKNOWN and \texttt{gpt-6-luna} invented a date in 2025. Neither was told the real date by the provider.
+
+\paragraph{Memorization.} We asked each model for Bitcoin's daily close on every day of the window, and on the 15th of each month from August 2025 to April 2026, as controls. A first probe of ten dates allowed the answer UNKNOWN, and both models declined every date, including the controls. Forced to give a number, they produced the results in Table~\ref{tab:leak}.
+
+\begin{table}[h]\centering\small
+\caption{Forced price estimates. Errors are medians of $|\hat P/P-1|$ over 9 controls and 30 window days. ``Guessed'' and ``realized'' changes run from 1 to 30 October. ``Corr.'' is the correlation between guessed and realized closes over the window, with a Fisher-$z$ $p$-value.}\label{tab:leak}
+\input{../generated/table_leakage_forced.tex}
+\end{table}
+
+The larger model has memorized prices: its control error is 0.1\%. It recalls month-end closes from August 2025 to January 2026 almost exactly. From February 2026 its error jumps to 20--30\%, so its effective knowledge of prices ends about three months before its reported cutoff.
+
+On October 2026 its guesses are a flat \$75--95k with no relation to the realized path: a 10\% median error and a correlation of $-0.24$. Its guesses rise 12\% over the month while the price fell 9\%.
+
+The smaller model knows less even before its cutoff. In October it guesses between \$75k and \$125k with a 23\% median error. Its weak positive correlation ($+0.31$, $p=0.10$) is not significant, before any correction for testing two models.
+
+A model that knew October would show the precision it shows on its controls. Neither does.
+
+\section{Sampling noise}\label{sec:consistency}
+
+Each decision is one sample from a stochastic system, so a different sample could have produced a different month. We re-ran every sixth decision (\ConsN{} dates) on identical inputs:
+\begin{itemize}
+\item the same cutoff and cached data;
+\item the book the original run saw;
+\item the memory log as it stood then, with the decision itself removed.
+\end{itemize}
+Only the models' sampling differed.
+
+\begin{table}[h]\centering\small
+\caption{Original and re-run decisions on identical inputs.}\label{tab:cons}
+\input{../generated/table_consistency.tex}
+\end{table}
+
+All \ConsSame{} re-runs reproduced the original rating and leverage (Table~\ref{tab:cons}). The desk is therefore not a coin flip from one sample to the next.
+
+Two caveats limit this:
+\begin{itemize}
+\item Four of the five dates fall in the long short regime, and the book the desk reads shows the position already held, which may anchor it.
+\item With five pairs, 5/5 agreement only establishes, at 95\% confidence, that the desk gives the same rating at least 55\% of the time ($0.05^{1/5}\approx0.55$).
+\end{itemize}
+Within these limits, the month's result reflects the desk's policy more than its sampling noise. It also means the desk's poor timing would likely recur on a re-run.
