@@ -1,0 +1,22 @@
+{
+  "written": "2026-10-31, before any carry backtest was run",
+  "note": "Append-only. Every configuration evaluated on the backtest window is listed here and counts toward the deflated Sharpe ratio. Sensitivities re-run the primary under other cost assumptions and are not trials.",
+  "window": {"daily": "2024-07-01..2026-10-30 (current funding rules; the forecasts are out-of-sample from 2024-07)", "hourly": "2026-04-07..2026-10-30 (UBTC and perp hourly)"},
+  "costs_base": {"fee_tier": 0, "taker": true, "spot_slippage_bps": 2, "perp_slippage_bps": 1, "borrow_apy": 0.05, "liq_penalty": 0.01, "pm_interpretation": "borrow"},
+  "funding_forecast_trials": ["persist24", "persist168", "clamp_ar", "clamp_ar_local", "ridge"],
+  "primary": "gated_persist168_L2.5",
+  "primary_rationale": "The simplest weekly forecast with the best out-of-sample score. L=2.5 survives a +33% rally under the strict PM interpretation, with daily rebalancing and intraday deleveraging above ratio 0.80.",
+  "trials": [
+    {"id": "fixed_L1.0", "policy": "always on", "L": 1.0},
+    {"id": "fixed_L1.5", "policy": "always on", "L": 1.5},
+    {"id": "fixed_L2.0", "policy": "always on", "L": 2.0},
+    {"id": "fixed_L2.5", "policy": "always on", "L": 2.5},
+    {"id": "fixed_L3.0", "policy": "always on", "L": 3.0},
+    {"id": "gated_persist168_L2.0", "policy": "forecast-gated", "model": "persist168", "L_hi": 2.0},
+    {"id": "gated_persist168_L2.5", "policy": "forecast-gated", "model": "persist168", "L_hi": 2.5},
+    {"id": "gated_ridge168_L2.0", "policy": "forecast-gated", "model": "ridge (168 h)", "L_hi": 2.0},
+    {"id": "gated_ridge168_L2.5", "policy": "forecast-gated", "model": "ridge (168 h)", "L_hi": 2.5}
+  ],
+  "gating_rule": "Decide daily at 00:00 UTC from the latest forecast strictly before. F = forecast mean hourly funding x 8760. F >= borrow + 2% -> L_hi; F >= 2% -> 1.0; 0 <= F < 2% -> keep the current position if invested (hysteresis), else 0; F < 0 -> 0 (flat).",
+  "sensitivities": ["borrow_apy 0.10 and 0.20", "maker fills", "pm_interpretation balance", "fee tier 3"]
+}

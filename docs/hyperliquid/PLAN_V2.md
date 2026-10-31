@@ -305,3 +305,22 @@ validated on years of history without pretraining leakage.
   model. *International Journal of Forecasting* 30(2).
 - White, H. (2000). A reality check for data snooping. *Econometrica* 68(5).
 - Earlier references: see `papers/references.bib`.
+
+---
+
+## 10. Status (2026-10-31)
+
+- **Phase 1 (carry) is done.** See [`CARRY_REPORT.md`](CARRY_REPORT.md).
+  - The always-on portfolio-margin carry earned +10.6%/yr at 1× and +18.9%/yr at 2.5× (2024-07 →
+    2026-10, net).
+  - 3× was liquidated five times, as the portfolio-margin rally formula predicts.
+  - The pre-registered forecast gate underperformed (+14.9%).
+  - The 7-day clamp-band funding model lost to persistence; this is reported as a negative result.
+  - The edge is decaying: funding was about 5.4% in 2026 against a 5% borrow rate.
+- **Phase 0 is partial.**
+  - Done: Hyperliquid perp, UBTC spot and funding panels with known-at, junk-price validation, and a
+    feature canary test.
+  - To do: Binance, Deribit and ETF loaders, and the live order-book/open-interest/utilization
+    recorder.
+- **Before phase 4 (forward test):** validate on testnet the portfolio-margin ratio interpretation
+  and that portfolio margin is live.
